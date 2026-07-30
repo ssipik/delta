@@ -59,13 +59,13 @@ def _sighting_order(row: dict, sources: dict[str, SourceConfig]) -> tuple:
 
 
 def latest_per_doc(
-    manifest_rows: list[dict], sources: dict[str, SourceConfig]
+    manifest_docs: list[dict], sources: dict[str, SourceConfig]
 ) -> list[dict]:
     """Select only manifest document in the most recent run (e.g., when documents apprear
     in multiple runs)."""
     latest: dict[tuple[str, str], dict] = {}
     order: dict[tuple[str, str], tuple] = {}
-    for row in manifest_rows:
+    for row in manifest_docs:
         key = (row["source_system"], row["doc_url"])
         rank = _sighting_order(row, sources)
         if key not in latest or rank > order[key]:
@@ -75,7 +75,7 @@ def latest_per_doc(
 
 
 def latest_complete_listings(
-    manifest_rows: list[dict], sources: dict[str, SourceConfig]
+    manifest_docs: list[dict], sources: dict[str, SourceConfig]
 ) -> tuple[list[dict], dict[str, str]]:
     """Filter manifest documents down to the ones that describe what exists now.
 
@@ -88,19 +88,19 @@ def latest_complete_listings(
       documents back.
 
     Returns the selected rows, plus the run_id each detect_deletions
-    source's deletions are based on.
+    source's deletion_docs are based on.
     """
     newest: dict[str, tuple[datetime, str]] = {}
-    for row in manifest_rows:
+    for row in manifest_docs:
         cfg = sources.get(row["source_id"])
         if cfg is None:
             continue
         if not cfg.detect_deletions:
-            # detection of deletions is not needed
+            # detection of deletion_docs is not needed
             # all docs in the manifest are kept (see the second loop)
             continue
         else:
-            # detection of deletions is needed
+            # detection of deletion_docs is needed
             # only documents in the most recent run/execution date are considered
             current = newest.get(row["source_id"])
             if current is None or row["execution_ts"] > current[0]:
@@ -111,15 +111,15 @@ def latest_complete_listings(
                 pass
     evidence_runs = {sid: run for sid, (_, run) in newest.items()}
     selected: list[dict] = []
-    for row in manifest_rows:
+    for row in manifest_docs:
         cfg = sources.get(row["source_id"])
         if cfg is None:
             continue
         if not cfg.detect_deletions:
-            # detection of deletions is not needed
+            # detection of deletion_docs is not needed
             selected.append(row)
         else:
-            # detection of deletions is needed
+            # detection of deletion_docs is needed
             if row["run_id"] == evidence_runs[row["source_id"]]:
                 selected.append(row)
     return selected, evidence_runs
@@ -166,11 +166,11 @@ def metadata_changed(manifest_row: dict, doc_row: dict) -> bool:
     return not comparable
 
 
-def classify(manifest_rows: list[dict], doc_rows: list[dict]) -> dict[str, list[dict]]:
+def classify(manifest_docs: list[dict], doc_rows: list[dict]) -> dict[str, list[dict]]:
     """Split a run's manifest into new / changed / reappeared / unchanged."""
     docs = {(d["source_system"], d["doc_url"]): d for d in doc_rows}
     result: dict[str, list[dict]] = {"new": [], "changed": [], "reappeared": [], "unchanged": []}
-    for row in manifest_rows:
+    for row in manifest_docs:
         doc = docs.get((row["source_system"], row["doc_url"]))
         if doc is None:
             result["new"].append(row)
@@ -184,7 +184,7 @@ def classify(manifest_rows: list[dict], doc_rows: list[dict]) -> dict[str, list[
 
 
 def compute_deletions(
-    manifest_rows: list[dict],
+    manifest_docs: list[dict],
     doc_rows: list[dict],
     sources: dict[str, SourceConfig],
 ) -> list[dict]:
@@ -195,24 +195,24 @@ def compute_deletions(
     manifest row this run. A source with no rows this run gives no evidence
     about its documents.
     """
-    listed = {(r["source_system"], r["doc_url"]) for r in manifest_rows}
-    sources_seen_this_run = {r["source_id"] for r in manifest_rows}
+    listed = {(r["source_system"], r["doc_url"]) for r in manifest_docs}
+    sources_seen_this_run = {r["source_id"] for r in manifest_docs}
     eligible = {
         sid for sid, cfg in sources.items()
         if cfg is not None and cfg.detect_deletions and sid in sources_seen_this_run
     }
-    deletions = [
+    deletion_docs = [
         doc for doc in doc_rows
         if doc["status"] == "active"
         and doc["source_id"] in eligible
         and (doc["source_system"], doc["doc_url"]) not in listed
     ]
-    return deletions
+    return deletion_docs
 
 
 def _replace_rows(engine: Engine, table, rows: list[dict]) -> None:
     """Make the table hold exactly `rows` — delta fully owns worklist and
-    deletions.
+    deletion_docs.
 
     Upserting alone would only ever add: re-running a run after a document
     stopped being 'changed' — or came back, so it is no longer deleted — would
@@ -245,7 +245,7 @@ def run_delta(
     Rolling-window sources keep each document's latest row across all runs —
     their history is the full set and gives no deletion evidence.
     detect_deletions sources are first cut down to their most recent run:
-    that run lists everything the source has now, so deletions are computed
+    that run lists everything the source has now, so deletion_docs are computed
     from it the same way as in run mode. Each deletion row records the
     run_id of the run it was based on — as recent as that source's last
     discovery.
@@ -263,10 +263,10 @@ def run_delta(
     if run_id is not None:
         query = query.where(ingest_manifest.c.run_id == run_id)
     with engine.connect() as conn:
-        manifest_rows = [dict(r) for r in conn.execute(query).mappings()]
+        manifest_docs = [dict(r) for r in conn.execute(query).mappings()]
         doc_rows = [dict(r) for r in conn.execute(_ledger_query()).mappings()]
 
-    if not manifest_rows:
+    if not manifest_docs:
         raise ValueError(
             f"no manifest rows for run {run_id!r} — did discover run?"
             if run_id is not None
@@ -275,19 +275,19 @@ def run_delta(
 
     evidence_runs: dict[str, str] = {}
     if run_id is None:
-        manifest_rows, evidence_runs = latest_complete_listings(manifest_rows, sources)
-        manifest_rows = latest_per_doc(manifest_rows, sources)
+        manifest_docs, evidence_runs = latest_complete_listings(manifest_docs, sources)
+        manifest_docs = latest_per_doc(manifest_docs, sources)
         logger.info(
             "whole-table mode: diffing %s documents; "
             "%s source(s) eligible for deletion detection",
-            len(manifest_rows),
+            len(manifest_docs),
             len(evidence_runs),
         )
-    deletions = compute_deletions(manifest_rows, doc_rows, sources)
+    deletion_docs = compute_deletions(manifest_docs, doc_rows, sources)
 
-    classes = classify(manifest_rows, doc_rows)
+    classes = classify(manifest_docs, doc_rows)
 
-    worklist_rows = [
+    worklist_docs = [
         {
             "manifest_id": row["manifest_id"],
             "run_id": row["run_id"],
@@ -300,20 +300,20 @@ def run_delta(
     ]
     # manifest_id here is the ledger's — the sighting whose points are live in
     # Qdrant, which is what finalize must delete. run_id is the detecting run.
-    deletion_rows = [
+    deletion_docs = [
         {
             "manifest_id": doc["manifest_id"],
             "run_id": run_id if run_id is not None else evidence_runs[doc["source_id"]],
         }
-        for doc in deletions
+        for doc in deletion_docs
     ]
-    _replace_rows(engine, ingest_worklist, worklist_rows)
-    _replace_rows(engine, ingest_deletions, deletion_rows)
+    _replace_rows(engine, ingest_worklist, worklist_docs)
+    _replace_rows(engine, ingest_deletions, deletion_docs)
 
     report = DeltaReport(run_id=run_id if run_id is not None else "<all-runs>")
     for reason, rows in classes.items():
         report.counts[reason] = len(rows)
-    report.counts["deleted"] = len(deletion_rows)
+    report.counts["deleted"] = len(deletion_docs)
     logger.info("delta %s: %s", report.run_id, report.counts)
     return report
 
@@ -335,7 +335,7 @@ def mark_ingested(run_id: str, engine: Engine | None = None) -> int:
                 select(ingest_worklist).where(ingest_worklist.c.run_id == run_id)
             ).mappings()
         }
-        manifest_rows = [
+        manifest_docs = [
             dict(r) for r in conn.execute(
                 select(ingest_manifest).where(ingest_manifest.c.run_id == run_id)
             ).mappings()
@@ -347,7 +347,7 @@ def mark_ingested(run_id: str, engine: Engine | None = None) -> int:
 
     count = 0
     with engine.begin() as conn:
-        for row in manifest_rows:
+        for row in manifest_docs:
             if row["manifest_id"] not in work_ids:
                 continue
             # the ledger's key IS manifest_id, so re-ingesting a document
