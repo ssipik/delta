@@ -166,9 +166,9 @@ def metadata_changed(manifest_row: dict, doc_row: dict) -> bool:
     return not comparable
 
 
-def classify(manifest_docs: list[dict], doc_rows: list[dict]) -> dict[str, list[dict]]:
+def classify(manifest_docs: list[dict], ledger_docs: list[dict]) -> dict[str, list[dict]]:
     """Split a run's manifest into new / changed / reappeared / unchanged."""
-    docs = {(d["source_system"], d["doc_url"]): d for d in doc_rows}
+    docs = {(d["source_system"], d["doc_url"]): d for d in ledger_docs}
     result: dict[str, list[dict]] = {"new": [], "changed": [], "reappeared": [], "unchanged": []}
     for row in manifest_docs:
         doc = docs.get((row["source_system"], row["doc_url"]))
@@ -185,7 +185,7 @@ def classify(manifest_docs: list[dict], doc_rows: list[dict]) -> dict[str, list[
 
 def compute_deletions(
     manifest_docs: list[dict],
-    doc_rows: list[dict],
+    ledger_docs: list[dict],
     sources: dict[str, SourceConfig],
 ) -> list[dict]:
     """Active ledger docs no longer listed by their source this run.
@@ -202,7 +202,7 @@ def compute_deletions(
         if cfg is not None and cfg.detect_deletions and sid in sources_seen_this_run
     }
     deletion_docs = [
-        doc for doc in doc_rows
+        doc for doc in ledger_docs
         if doc["status"] == "active"
         and doc["source_id"] in eligible
         and (doc["source_system"], doc["doc_url"]) not in listed
@@ -264,7 +264,7 @@ def run_delta(
         query = query.where(ingest_manifest.c.run_id == run_id)
     with engine.connect() as conn:
         manifest_docs = [dict(r) for r in conn.execute(query).mappings()]
-        doc_rows = [dict(r) for r in conn.execute(_ledger_query()).mappings()]
+        ledger_docs = [dict(r) for r in conn.execute(_ledger_query()).mappings()]
 
     if not manifest_docs:
         raise ValueError(
@@ -283,9 +283,9 @@ def run_delta(
             len(manifest_docs),
             len(evidence_runs),
         )
-    deletion_docs = compute_deletions(manifest_docs, doc_rows, sources)
+    deletion_docs = compute_deletions(manifest_docs, ledger_docs, sources)
 
-    classes = classify(manifest_docs, doc_rows)
+    classes = classify(manifest_docs, ledger_docs)
 
     worklist_docs = [
         {
