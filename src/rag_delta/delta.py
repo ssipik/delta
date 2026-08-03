@@ -151,13 +151,13 @@ def _ledger_query():
     )
 
 
-def metadata_changed(manifest_row: dict, doc_row: dict) -> bool:
+def metadata_changed(manifest_doc: dict, ledger_doc: dict) -> bool:
     """Return True if the change token (doc_version) differs between manifest
     and ledger, or if it cannot be compared (NULL on either side) — the pre-parsing check
     must never under-trigger. (size_bytes is a cost proxy, not compared here.)"""
     comparable = False
     for field_name in _METADATA_FIELDS:
-        ours, theirs = manifest_row.get(field_name), doc_row.get(field_name)
+        ours, theirs = manifest_doc.get(field_name), ledger_doc.get(field_name)
         if ours is None or theirs is None:
             continue
         comparable = True
@@ -170,16 +170,16 @@ def classify(manifest_docs: list[dict], ledger_docs: list[dict]) -> dict[str, li
     """Split a run's manifest into new / changed / reappeared / unchanged."""
     docs = {(d["source_system"], d["doc_url"]): d for d in ledger_docs}
     result: dict[str, list[dict]] = {"new": [], "changed": [], "reappeared": [], "unchanged": []}
-    for row in manifest_docs:
-        doc = docs.get((row["source_system"], row["doc_url"]))
-        if doc is None:
-            result["new"].append(row)
-        elif doc["status"] == "deleted":
-            result["reappeared"].append(row)
-        elif metadata_changed(row, doc):
-            result["changed"].append(row)
+    for doc in manifest_docs:
+        document = docs.get((doc["source_system"], doc["doc_url"]))
+        if document is None:
+            result["new"].append(doc)
+        elif document["status"] == "deleted":
+            result["reappeared"].append(doc)
+        elif metadata_changed(doc, document):
+            result["changed"].append(doc)
         else:
-            result["unchanged"].append(row)
+            result["unchanged"].append(doc)
     return result
 
 
