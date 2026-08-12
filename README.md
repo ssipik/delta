@@ -30,4 +30,4 @@ Typical dev cycle: `rag_discover --run-id X` → `rag_delta --run-id X` (worklis
 - **Delta only reads `ingest_docs`** — ledger rows are written when ingestion actually completes (stage 5 later; `mark_ingested()` is the temporary stand-in). Crash-safety: a document keeps reappearing on the worklist until its content has truly landed.
 - **Layer-1 semantics**: signals are compared only where both sides have them; if *no* signal is comparable the document counts as changed — layer 1 may over-trigger (a wasted parse) but never under-triggers. Layer 2 (`text_sha` post-parse) catches false positives before embedding.
 - **Empty run fails loudly**: `run_delta` raises on a run with zero manifest rows — a typo'd `--run-id` must not masquerade as "nothing changed".
-- Re-runs are idempotent (worklist/deletions upsert on `(run_id, source_system, doc_url)`).
+- Re-runs are idempotent: delta reads a fixed manifest, and worklist/deletions upsert on `manifest_id` (delta fully owns both tables — rows it no longer computes are deleted, not left behind).

@@ -48,21 +48,42 @@ class DeltaReport:
 _EPOCH = datetime.min.replace(tzinfo=timezone.utc)
 
 
+def _version_number(row: dict) -> int:
+    """Confluence's doc_version as an int (it is the version number, bumped on
+    every edit). 0 when missing or not a number, so such a row loses to any
+    numbered one."""
+    raw = row.get("doc_version")
+    if raw is None:
+        return 0
+    try:
+        return int(raw)
+    except ValueError:
+        return 0
+
+
 def _sighting_order(row: dict, sources: dict[str, SourceConfig]) -> tuple:
-    """Sort key for a document's manifest rows:
+    """Sort key for a document's manifest rows. Same shape everywhere
+    (published_at, version number, execution_ts) so keys stay comparable:
     - RSS by (published_at, execution_ts)
+    - Confluence by (version number, execution_ts)
     - every other source (and unknown ones) by execution_ts alone."""
     cfg = sources.get(row["source_id"])
-    if cfg is not None and cfg.type == "rss":
-        return (row.get("published_at") or _EPOCH, row["execution_ts"])
-    return (_EPOCH, row["execution_ts"])
+    if cfg is not None:
+        if cfg.type == "rss":
+            return (row.get("published_at") or _EPOCH, 0, row["execution_ts"])
+        elif cfg.type == "confluence":
+            return (_EPOCH, _version_number(row), row["execution_ts"])
+    return (_EPOCH, 0, row["execution_ts"])
 
 
-def latest_per_doc(
+def unique_manifest_docs(
     manifest_docs: list[dict], sources: dict[str, SourceConfig]
 ) -> list[dict]:
-    """Select only manifest document in the most recent run (e.g., when documents apprear
-    in multiple runs)."""
+    """Select only unique manifest documents (source_system, doc_url), e.g.:
+    - if the same doc, i.e., (doc_url, source_system) appears in multiple runs
+    - if the same doc_url appears in multiple source_systems.
+    Keep only the most recent sighting.
+    """
     latest: dict[tuple[str, str], dict] = {}
     order: dict[tuple[str, str], tuple] = {}
     for row in manifest_docs:
@@ -91,8 +112,8 @@ def latest_complete_listings(
     source's deletion_docs are based on.
     """
     newest: dict[str, tuple[datetime, str]] = {}
-    for row in manifest_docs:
-        cfg = sources.get(row["source_id"])
+    for doc in manifest_docs:
+        cfg = sources.get(doc["source_id"])
         if cfg is None:
             continue
         if not cfg.detect_deletions:
@@ -102,26 +123,26 @@ def latest_complete_listings(
         else:
             # detection of deletion_docs is needed
             # only documents in the most recent run/execution date are considered
-            current = newest.get(row["source_id"])
-            if current is None or row["execution_ts"] > current[0]:
+            current = newest.get(doc["source_id"])
+            if current is None or doc["execution_ts"] > current[0]:
                 # new/newer run found
-                newest[row["source_id"]] = (row["execution_ts"], row["run_id"])
+                newest[doc["source_id"]] = (doc["execution_ts"], doc["run_id"])
             else:
-                # older run, or same execution_ts (first row seen wins ties)
+                # older run, or same execution_ts (first doc seen wins ties)
                 pass
     evidence_runs = {sid: run for sid, (_, run) in newest.items()}
     selected: list[dict] = []
-    for row in manifest_docs:
-        cfg = sources.get(row["source_id"])
+    for doc in manifest_docs:
+        cfg = sources.get(doc["source_id"])
         if cfg is None:
             continue
         if not cfg.detect_deletions:
             # detection of deletion_docs is not needed
-            selected.append(row)
+            selected.append(doc)
         else:
             # detection of deletion_docs is needed
-            if row["run_id"] == evidence_runs[row["source_id"]]:
-                selected.append(row)
+            if doc["run_id"] == evidence_runs[doc["source_id"]]:
+                selected.append(doc)
     return selected, evidence_runs
 
 
@@ -276,7 +297,6 @@ def run_delta(
     evidence_runs: dict[str, str] = {}
     if run_id is None:
         manifest_docs, evidence_runs = latest_complete_listings(manifest_docs, sources)
-        manifest_docs = latest_per_doc(manifest_docs, sources)
         logger.info(
             "whole-table mode: diffing %s documents; "
             "%s source(s) eligible for deletion detection",
@@ -284,6 +304,9 @@ def run_delta(
             len(evidence_runs),
         )
     deletion_docs = compute_deletions(manifest_docs, ledger_docs, sources)
+    
+    # Deduplicate manifest docs
+    manifest_docs = unique_manifest_docs(manifest_docs, sources)
 
     classes = classify(manifest_docs, ledger_docs)
 

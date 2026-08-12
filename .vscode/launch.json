@@ -1,0 +1,45 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "rag_delta",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "rag_delta",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "cwd": "${workspaceFolder}",
+            "python": "${workspaceFolder}/.venv/bin/python",
+            "envFile": "${workspaceFolder}/.env",
+            "env": {
+                "RAG_PG_DSN": "postgresql+psycopg://rag:rag@localhost:5433/rag_ingestion"
+            },
+            "args": [
+                "--run-id", "local-20260811T153836Z"
+            ]
+        },
+        {
+            "name": "rag_delta: whole-table (no --run-id)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "rag_delta",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "cwd": "${workspaceFolder}",
+            "python": "${workspaceFolder}/.venv/bin/python",
+            "envFile": "${workspaceFolder}/.env",
+            "args": []
+        },
+        {
+            "name": "rag_delta: pytest (current file)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "cwd": "${workspaceFolder}",
+            "python": "${workspaceFolder}/.venv/bin/python",
+            "args": ["${file}", "-vv"]
+        }
+    ]
+}

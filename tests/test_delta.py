@@ -4,7 +4,7 @@ from rag_delta.delta import (
     classify,
     compute_deletions,
     latest_complete_listings,
-    latest_per_doc,
+    unique_manifest_docs,
     metadata_changed,
 )
 from rag_delta.sources import SourceConfig
@@ -57,23 +57,23 @@ def source(
 RSS_SOURCES = {"feed_a": source("feed_a"), "feed_b": source("feed_b")}
 
 
-class TestLatestPerDoc:
+class TestUniqueManifestDocs:
     def test_most_recent_sighting_wins(self):
         old = manifest_row(run_id="run-1", execution_ts=ts(1), doc_version="v1")
         new = manifest_row(run_id="run-2", execution_ts=ts(9), doc_version="v2")
-        result = latest_per_doc([old, new], RSS_SOURCES)
+        result = unique_manifest_docs([old, new], RSS_SOURCES)
         assert len(result) == 1
         assert result[0]["doc_version"] == "v2"
 
     def test_distinct_docs_all_kept(self):
         a = manifest_row(doc_url="https://example.com/a")
         b = manifest_row(doc_url="https://example.com/b")
-        assert len(latest_per_doc([a, b], RSS_SOURCES)) == 2
+        assert len(unique_manifest_docs([a, b], RSS_SOURCES)) == 2
 
     def test_ts_tie_keeps_first_row(self):
         first = manifest_row(run_id="run-1", doc_version="v1")
         second = manifest_row(run_id="run-2", doc_version="v2")  # same execution_ts
-        assert latest_per_doc([first, second], RSS_SOURCES)[0]["doc_version"] == "v1"
+        assert unique_manifest_docs([first, second], RSS_SOURCES)[0]["doc_version"] == "v1"
 
     def test_rss_published_at_outranks_execution_ts(self):
         # feed_b re-listed the doc later, but with an older pubDate: the
@@ -86,7 +86,7 @@ class TestLatestPerDoc:
             run_id="run-2", source_id="feed_b",
             published_at=ts(5), execution_ts=ts(9), doc_version="v-old",
         )
-        result = latest_per_doc([newer_item, stale_relisting], RSS_SOURCES)
+        result = unique_manifest_docs([newer_item, stale_relisting], RSS_SOURCES)
         assert result[0]["doc_version"] == "v-new"
 
     def test_rss_missing_published_at_loses_to_dated_sighting(self):
@@ -96,7 +96,7 @@ class TestLatestPerDoc:
         dated = manifest_row(
             run_id="run-2", published_at=ts(2), execution_ts=ts(1), doc_version="v2"
         )
-        result = latest_per_doc([undated, dated], RSS_SOURCES)
+        result = unique_manifest_docs([undated, dated], RSS_SOURCES)
         assert result[0]["doc_version"] == "v2"
 
     def test_non_rss_source_ignores_published_at(self):
@@ -107,8 +107,44 @@ class TestLatestPerDoc:
         new_pub_old_run = manifest_row(
             run_id="run-1", published_at=ts(8), execution_ts=ts(1), doc_version="v1"
         )
-        result = latest_per_doc([old_pub_new_run, new_pub_old_run], sources)
+        result = unique_manifest_docs([old_pub_new_run, new_pub_old_run], sources)
         assert result[0]["doc_version"] == "v2"
+
+    def test_confluence_highest_version_wins(self):
+        sources = {"wiki": source("wiki", type="confluence")}
+        # version 10 > version 9: compared as numbers, not as text
+        old = manifest_row(
+            source_id="wiki", run_id="run-2", execution_ts=ts(9), doc_version="9"
+        )
+        new = manifest_row(
+            source_id="wiki", run_id="run-1", execution_ts=ts(1), doc_version="10"
+        )
+        result = unique_manifest_docs([old, new], sources)
+        assert len(result) == 1
+        assert result[0]["doc_version"] == "10"
+
+    def test_confluence_missing_version_loses(self):
+        sources = {"wiki": source("wiki", type="confluence")}
+        unversioned = manifest_row(
+            source_id="wiki", run_id="run-2", execution_ts=ts(9), doc_version=None
+        )
+        versioned = manifest_row(
+            source_id="wiki", run_id="run-1", execution_ts=ts(1), doc_version="3"
+        )
+        result = unique_manifest_docs([unversioned, versioned], sources)
+        assert result[0]["doc_version"] == "3"
+
+    def test_confluence_same_version_keeps_newest_run(self):
+        sources = {"wiki": source("wiki", type="confluence")}
+        old = manifest_row(
+            source_id="wiki", run_id="run-1", execution_ts=ts(1), doc_version="4"
+        )
+        new = manifest_row(
+            source_id="wiki", run_id="run-2", execution_ts=ts(9), doc_version="4"
+        )
+        result = unique_manifest_docs([old, new], sources)
+        assert len(result) == 1
+        assert result[0]["run_id"] == "run-2"
 
     def test_unknown_source_id_falls_back_to_execution_ts(self):
         # source_id no longer in sources.yaml → observation order
@@ -120,7 +156,7 @@ class TestLatestPerDoc:
             source_id="gone_feed", published_at=ts(2), execution_ts=ts(9),
             doc_version="v2",
         )
-        result = latest_per_doc([removed, current], RSS_SOURCES)
+        result = unique_manifest_docs([removed, current], RSS_SOURCES)
         assert result[0]["doc_version"] == "v2"
 
 
