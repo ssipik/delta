@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Stage 2 (DELTA) of the six-stage ingestion skeleton — `../ARCHITECTURE.md` block 11 is authoritative; read it before changing the diff semantics. Standalone stage module: `settings.py`, `sources.py`, `db.py` are **deliberately duplicated** from `rag_discover` (standalone-blocks convention, dedup refactor deferred) — fix bugs in both places.
+Stage 2 (DELTA) of the six-stage ingestion skeleton — `../ARCHITECTURE.md` block 11 is authoritative; read it before changing the diff semantics. Standalone stage module: `settings.py` and `db.py` are **deliberately duplicated** from `rag_discover` (standalone-blocks convention, dedup refactor deferred) — fix bugs in both places. Configuration is **not** duplicated: `sources.yaml` and `parameters.yaml` come from the shared `rag-config` package (`../config`) — edit them there, once.
 
 ## Commands
 

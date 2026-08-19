@@ -16,7 +16,7 @@ from rag_delta.db import (
     ingest_worklist,
     upsert_rows,
 )
-from rag_delta.sources import SourceConfig, load_sources
+from rag_config import SourceConfig, load_sources
 
 logger = logging.getLogger(__name__)
 
@@ -255,7 +255,7 @@ def _replace_rows(engine: Engine, table, rows: list[dict]) -> None:
 
 
 def run_delta(
-    config_path: str | Path,
+    config_path: str | Path | None = None,
     run_id: str | None = None,
     engine: Engine | None = None,
 ) -> DeltaReport:

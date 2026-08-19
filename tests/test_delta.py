@@ -7,7 +7,7 @@ from rag_delta.delta import (
     unique_manifest_docs,
     metadata_changed,
 )
-from rag_delta.sources import SourceConfig
+from rag_config import SourceConfig
 
 
 def ts(day: int) -> datetime:

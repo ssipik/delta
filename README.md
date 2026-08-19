@@ -14,7 +14,7 @@ uv sync --frozen --extra dev        # lock-exact venv from uv.lock
 .venv/bin/python -m pytest          # offline unit tests (pure diff logic)
 
 # Diff a discovery run (Postgres from ../postgres must be up)
-python -m rag_delta --run-id <id> [--config config/sources.yaml]
+python -m rag_delta --run-id <id>
 
 # Dev stand-in for stage 5: mark the run's worklist as ingested into the ledger
 python -m rag_delta --run-id <id> --mark-ingested

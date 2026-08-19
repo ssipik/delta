@@ -21,7 +21,8 @@ def test_parser_accepts_flags():
     assert args.mark_ingested is True
 
 
-def test_main_missing_config_exits_2(capsys):
-    rc = main(["--run-id", "r1", "--config", "/nonexistent/sources.yaml"])
+def test_main_missing_config_exits_2(capsys, monkeypatch):
+    monkeypatch.setenv("RAG_SOURCES_PATH", "/nonexistent/sources.yaml")
+    rc = main(["--run-id", "r1"])
     assert rc == 2
     assert "error:" in capsys.readouterr().err

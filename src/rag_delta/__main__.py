@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import sys
+
+from dotenv import load_dotenv
 
 from rag_delta.delta import mark_ingested, run_delta
 
@@ -28,11 +29,6 @@ def build_parser() -> argparse.ArgumentParser:
         "diff the whole-table view — each document's most recent sighting, "
         "with detect_deletions sources scoped to their newest run so "
         "deletions are computed from that run's complete listing",
-    )
-    parser.add_argument(
-        "--config",
-        default=os.environ.get("RAG_SOURCES_PATH", "config/sources.yaml"),
-        help="path to sources.yaml (default: $RAG_SOURCES_PATH or %(default)s)",
     )
     parser.add_argument(
         "--mark-ingested",
@@ -56,7 +52,7 @@ def main(argv: list[str] | None = None) -> int:
             count = mark_ingested(args.run_id)
             print(f"run {args.run_id}: {count} docs marked ingested")
             return 0
-        report = run_delta(args.config, run_id=args.run_id)
+        report = run_delta(run_id=args.run_id)
     except (ValueError, FileNotFoundError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -71,4 +67,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    # Only needed when running in development. In production the env variables are provided by Vault.
+    load_dotenv()
     raise SystemExit(main())
