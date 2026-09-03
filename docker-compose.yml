@@ -1,7 +1,10 @@
 # One-off runs: docker compose run --rm pipeline python -m rag_delta --run-id <id> [--mark-ingested]
 services:
   pipeline:
-    build: .
+    build:
+      context: .
+      secrets:
+        - git_token
     # No args = whole-table mode (diff every source's current docs). For a
     # single run: docker compose run --rm pipeline python -m rag_delta --run-id <id>
     command: python -m rag_delta
@@ -10,7 +13,14 @@ services:
       # live-mount code over the image copy (edit without rebuild); sources.yaml
       # and parameters.yaml come from the rag-config dependency, not from here
       - ./src:/app
-      - ../data:/app/data
+      # not /app/data: sources.yaml scans local_files paths relative to the CWD
+      - ../data:/data
     environment:
       # host.docker.internal = the host machine, where ../postgres publishes 5433
       RAG_PG_DSN: postgresql+psycopg://rag:rag@host.docker.internal:5433/rag_ingestion
+
+# Build-time only: the private rag-config repo is cloned by `uv sync` in the
+# Dockerfile. BuildKit mounts this for that one RUN, so no layer holds it.
+secrets:
+  git_token:
+    environment: BITBUCKET_API_TOKEN
