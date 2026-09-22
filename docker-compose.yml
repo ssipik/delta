@@ -13,8 +13,6 @@ services:
       # live-mount code over the image copy (edit without rebuild); sources.yaml
       # and parameters.yaml come from the rag-config dependency, not from here
       - ./src:/app
-      # not /app/data: sources.yaml scans local_files paths relative to the CWD
-      - ../data:/data
     environment:
       # host.docker.internal = the host machine, where ../postgres publishes 5433
       RAG_PG_DSN: postgresql+psycopg://rag:rag@host.docker.internal:5433/rag_ingestion
